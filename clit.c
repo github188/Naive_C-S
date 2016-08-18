@@ -47,6 +47,7 @@ void serv_req(int sockfd)
         printf("recv error");
         exit(-1);
     }
+    printf("recv succeed");
 }
 
 
