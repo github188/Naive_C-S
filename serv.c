@@ -50,7 +50,7 @@ void serve(int sockfd)
     printf("come on wding\n");
 
     int             clfd;
-    socklen_t       alen;
+    socklen_t       alen, blen;
     struct  addrinfo cliaddr;
     //struct  sockaddr_in cliaddr;
     char    buff[BUFLEN];
@@ -70,15 +70,15 @@ void serve(int sockfd)
         if ((getnameinfo((struct sockaddr *)&cliaddr, alen,
                         clihost, BUFLEN, cliserv, BUFLEN, NI_NUMERICSERV||NI_NUMERICHOST)) != 0)
             oops("getnameinfo");
-        printf("hostname is %s\n",clihost);
+        //blen = snprintf(buff, sizeof(buff), "connection from: ", clihost, ", port: ", cliserv);
+        if((blen = snprintf(buff, sizeof(buff), "connection from %s, port: %s\n", 
+                    clihost, cliserv)) < 0)
+                oops("snprintf");
+        printf(buff, blen);
+        //printf("connection from %s, port %s\n",clihost ,cliserv);
+        write(clfd, buff, strlen(buff));
 
-        printf("connection from %s, port XX",
-                inet_ntop(AF_INET, &cliaddr, buff, sizeof(buff))
-               // ntohs(cliaddr->ai_
-                );
-        
-
-        exit(0);
+        close(clfd);
     }
 
 }
