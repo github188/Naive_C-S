@@ -77,18 +77,58 @@ int connect_retry(int domain, int type, int protocol,
 
 void serv_req(int sockfd)
 {
-    int     n;
-    char    buf[BUFLEN];
-    str_cli(stdin, sockfd);
-    while ((n = recv(sockfd, buf, BUFLEN, 0)) > 0)
-        write(STDOUT_FILENO, buf, n);
-    if (n < 0) {
-        printf("recv error");
-        exit(-1);
+//    int     n;
+//    char    buf[BUFLEN];
+    
+    struct CS_MsgInfo
+    {
+//        char    type;               /* info type, 'd' for daily, 'g' for GPS */
+        char    send_ID[20];        /* ID of sender */
+        size_t  info_length;        /* length of info content */
+        char    info_content[1024]; /* info content */
+    };
+
+    struct CS_MsgInfo msginfo;
+    size_t slen = sizeof(msginfo);
+    memset(&msginfo, 0, slen);
+    printf("Enter the content you wanna to send\n");
+    //msginfo.send_ID = "192.168.37.130";   /* wrong method */
+    strcpy(msginfo.send_ID, "192.168.37.130");
+
+    if ( (msginfo.info_length = read(STDIN_FILENO, 
+                   msginfo.info_content, 1024) - 1) < 0)
+       oops("read stdin");
+    
+    char *snd_buf = (char*)malloc(slen);
+    memset(snd_buf, 0, slen);
+    memcpy(snd_buf, &msginfo, slen);
+    
+    int pos = 0, len = 0;
+    while (pos < slen)
+    {
+        if ( (len = send(sockfd, snd_buf, slen, 0)) <= 0)
+            oops("struct send");
+        pos += len;
     }
+    free(snd_buf);
+    close(sockfd);
+    printf("Send over");
+    
+    exit(0);
+}
+
+    //send(sockfd, snf_buf, slen, 0);
+    
+    //str_cli(stdin, sockfd);
+//    while ((n = recv(sockfd, buf, BUFLEN, 0)) > 0)
+//        write(STDOUT_FILENO, buf, n);
+//    if (n < 0) {
+//        printf("recv error");
+//        exit(-1);
+//    }
     //printf("recv succeed");
     //str_cli(stdin, sockfd);
-}
+
 
 
 int main(int argc, char *argv[])

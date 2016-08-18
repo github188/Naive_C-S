@@ -77,7 +77,15 @@ void serve(int listenfd)
     char    clihost[BUFLEN];
     char    cliserv[BUFLEN];
 
-      for (;;) {
+    struct CS_MsgInfo
+    {
+//        char    type;               /* info type, 'd' for daily, 'g' for GPS */
+        char    send_ID[20];        /* ID of sender */
+        size_t  info_length;        /* length of info content */
+        char    info_content[1024]; /* info content */
+    };
+
+    for (;;) {
         alen = sizeof(cliaddr);
         printf("alen is: %d\n",alen);
         //memset(&cliaddr, 0, len);
@@ -89,20 +97,42 @@ void serve(int listenfd)
         
         if ( (childpid = fork()) == 0) { /* child process */
             close(listenfd);
-            //getnameinfo() inverse of getaddrinfo
-            if ((getnameinfo((struct sockaddr *)&cliaddr, alen,
-                            clihost, BUFLEN, cliserv, BUFLEN, NI_NUMERICSERV||NI_NUMERICHOST)) != 0)
-                oops("getnameinfo");
-            //blen = snprintf(buff, sizeof(buff), "connection from: ", clihost, ", port: ", cliserv);
-            if((blen = snprintf(buff, sizeof(buff), "connection from %s, port: %s\n", 
-                       clihost, cliserv)) < 0)
-                    oops("snprintf");
-            printf(buff, blen);
-            //printf("connection from %s, port %s\n",clihost ,cliserv);
-            write(connfd, buff, strlen(buff));
+            
+            struct CS_MsgInfo rev_info;
+            int rlen = sizeof(rev_info);
+            memset(&rev_info, 0 ,rlen);
+
+            char *rev_buff = (char*)malloc(rlen);
+
+            int pos = 0, len = 0;
+            while (pos < rlen)
+            {
+                if ( (len = recv(connfd, rev_buff,
+                                rlen, 0)) < 0)
+                    oops("recv");
+                pos += len;
+            }
+                      
             //close(connfd);
-            printf("reading from client...");
-            str_echo(connfd);
+            memcpy(&rev_info, rev_buff, rlen);
+
+            printf("recv over sendID = %s",rev_info.send_ID);
+            free(rev_buff);
+
+            //getnameinfo() inverse of getaddrinfo
+            //if ((getnameinfo((struct sockaddr *)&cliaddr, alen,
+            //                clihost, BUFLEN, cliserv, BUFLEN, NI_NUMERICSERV||NI_NUMERICHOST)) != 0)
+            //    oops("getnameinfo");
+            //blen = snprintf(buff, sizeof(buff), "connection from: ", clihost, ", port: ", cliserv);
+            //if((blen = snprintf(buff, sizeof(buff), "connection from %s, port: %s\n", 
+            //           clihost, cliserv)) < 0)
+            //        oops("snprintf");
+            //printf(buff, blen);
+            //printf("connection from %s, port %s\n",clihost ,cliserv);
+            //write(connfd, buff, strlen(buff));
+            //close(connfd);
+            //printf("reading from client...");
+            //str_echo(connfd);
             exit(0);
         }
         close(connfd);
