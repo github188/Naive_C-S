@@ -8,10 +8,49 @@
 #include <syslog.h>
 #include <sys/types.h>
 
-#define BUFLEN 128
-#define MAXSLEEP 128
+#define BUFLEN      128
+#define MAXSLEEP    128
+#define MAXLINE     4096
 
 #define oops(msg)   { perror(msg), exit(1); }
+
+ssize_t readline(int fd, void *vptr, size_t maxlen)
+{
+    ssize_t n, rc;
+    char c, *ptr;
+    ptr = vptr;
+    for(n = 1; n < maxlen; n++){
+        again:
+            if((rc = read(fd, &c, 1)) == 1){
+                *ptr++ = c;
+                if(c == '\n')
+                    break;
+            }else if(rc == 0){
+                *ptr = 0;
+                return (n-1);
+            }else{
+                if(errno == EINTR)
+                    goto again;
+                return -1;
+            }
+    }
+    *ptr = 0;
+    return n;
+}
+
+void str_cli(FILE *fp, int sockfd)
+{
+    char    sendline[MAXLINE], recvline[MAXLINE];
+    
+    while (fgets(sendline, MAXLINE, fp) != NULL) {
+        write(sockfd, sendline, strlen(sendline));
+
+        if (readline(sockfd, recvline, MAXLINE) == 0)
+            oops("client readline");
+
+        fputs(recvline, stdout);
+    }
+}
 
 /* try to connect with exponenital backoff */
 int connect_retry(int domain, int type, int protocol,
@@ -40,14 +79,15 @@ void serv_req(int sockfd)
 {
     int     n;
     char    buf[BUFLEN];
-    
+    str_cli(stdin, sockfd);
     while ((n = recv(sockfd, buf, BUFLEN, 0)) > 0)
         write(STDOUT_FILENO, buf, n);
     if (n < 0) {
         printf("recv error");
         exit(-1);
     }
-    printf("recv succeed");
+    //printf("recv succeed");
+    //str_cli(stdin, sockfd);
 }
 
 

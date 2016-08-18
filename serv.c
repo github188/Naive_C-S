@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 
 #define BUFLEN  128
+#define MAXLINE 4096
 #define QLEN    10
 
 #ifndef HOST_NAME_MAX
@@ -17,39 +18,58 @@
 
 #define oops(msg)   { perror(msg), exit(1); }
 
+void str_echo(int sockfd)
+{
+    ssize_t     n;
+    char        buf[BUFLEN];
+
+again:
+    while ( (n = read(sockfd, buf, BUFLEN)) > 0) {
+        printf("message get");
+        write(STDOUT_FILENO, buf, n);
+        write(sockfd, buf, n);
+    }
+    if (n < 0 && errno == EINTR)
+        goto again;
+    else if (n < 0)
+        oops("read");
+}
+
+
 int initserver(int type, const struct sockaddr *addr, 
             socklen_t alen, int qlen)
 {   
-    int fd, err;
+    int listenfd, err;
     int reuse = 1;
 
-    if ((fd = socket(addr->sa_family, type, 0)) < 0)
+    if ((listenfd = socket(addr->sa_family, type, 0)) < 0)
         return(-1);
-    printf("socket succeed, sockfd is: %d\n", fd);
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse,
+    printf("socket succeed, listenfd is: %d\n", listenfd);
+    if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &reuse,
             sizeof(int)) < 0)
         oops("setsockopt");
-    if (bind(fd, addr, alen) < 0)
+    if (bind(listenfd, addr, alen) < 0)
         oops("bind");
     printf("bind succeed!");
     if (type == SOCK_STREAM || type == SOCK_SEQPACKET)
-        if (listen(fd, qlen) < 0)
+        if (listen(listenfd, qlen) < 0)
             goto errout;
-    return(fd);
+    return(listenfd);
 
 errout:
     err = errno;
-    close(fd);
+    close(listenfd);
     errno = err;
     return(-1);
 }
 
-void serve(int sockfd)
+void serve(int listenfd)
 {
-    printf("sockfd is %d\n", sockfd);
+    printf("listenfd is %d\n", listenfd);
     printf("come on wding\n");
 
-    int             clfd;
+    int             connfd;
+    int             childpid;
     socklen_t       alen, blen;
     struct  addrinfo cliaddr;
     //struct  sockaddr_in cliaddr;
@@ -57,28 +77,35 @@ void serve(int sockfd)
     char    clihost[BUFLEN];
     char    cliserv[BUFLEN];
 
-    for (;;) {
+      for (;;) {
         alen = sizeof(cliaddr);
         printf("alen is: %d\n",alen);
         //memset(&cliaddr, 0, len);
-        if ((clfd = accept(sockfd, (struct sockaddr *)&cliaddr, &alen)) < 0) {
+        if ((connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &alen)) < 0) {
             syslog(LOG_ERR, "serv: accept error: %s", strerror(errno));
             exit(1);
         } 
-        printf("connection from where?\n");
-        //getnameinfo() inverse of getaddrinfo
-        if ((getnameinfo((struct sockaddr *)&cliaddr, alen,
-                        clihost, BUFLEN, cliserv, BUFLEN, NI_NUMERICSERV||NI_NUMERICHOST)) != 0)
-            oops("getnameinfo");
-        //blen = snprintf(buff, sizeof(buff), "connection from: ", clihost, ", port: ", cliserv);
-        if((blen = snprintf(buff, sizeof(buff), "connection from %s, port: %s\n", 
-                    clihost, cliserv)) < 0)
-                oops("snprintf");
-        printf(buff, blen);
-        //printf("connection from %s, port %s\n",clihost ,cliserv);
-        write(clfd, buff, strlen(buff));
-
-        close(clfd);
+        //printf("connection from where?\n");
+        
+        if ( (childpid = fork()) == 0) { /* child process */
+            close(listenfd);
+            //getnameinfo() inverse of getaddrinfo
+            if ((getnameinfo((struct sockaddr *)&cliaddr, alen,
+                            clihost, BUFLEN, cliserv, BUFLEN, NI_NUMERICSERV||NI_NUMERICHOST)) != 0)
+                oops("getnameinfo");
+            //blen = snprintf(buff, sizeof(buff), "connection from: ", clihost, ", port: ", cliserv);
+            if((blen = snprintf(buff, sizeof(buff), "connection from %s, port: %s\n", 
+                       clihost, cliserv)) < 0)
+                    oops("snprintf");
+            printf(buff, blen);
+            //printf("connection from %s, port %s\n",clihost ,cliserv);
+            write(connfd, buff, strlen(buff));
+            //close(connfd);
+            printf("reading from client...");
+            str_echo(connfd);
+            exit(0);
+        }
+        close(connfd);
     }
 
 }
@@ -87,7 +114,7 @@ int main(void)
 {
     struct addrinfo *ailist, *aip;
     struct addrinfo hint;
-    int             sockfd, err, n;
+    int             listenfd, err, n;
     char            *host;
 
     if ((n = sysconf(_SC_HOST_NAME_MAX)) < 0)
@@ -110,9 +137,9 @@ int main(void)
     }
 
     for (aip = ailist; aip != NULL; aip = aip->ai_next) {
-        if ((sockfd = initserver(SOCK_STREAM, aip->ai_addr, 
+        if ((listenfd = initserver(SOCK_STREAM, aip->ai_addr, 
                     aip->ai_addrlen, QLEN)) >= 0) {
-            serve(sockfd);
+            serve(listenfd);
             exit(0);
         }
     }
