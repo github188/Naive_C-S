@@ -1,15 +1,19 @@
+/*******************************
+ * Author :     wding
+ * filename :   serv.c
+ * date:        2016 - 8 - 19
+ * Description: Server program in netmodule of P4 system
+ *******************************/
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <netdb.h>
 #include <errno.h>
 #include <syslog.h>
-#include <sys/socket.h>
 #include <string.h>
-#include <arpa/inet.h>
+#include "p4net.h"
 
 #define BUFLEN  128
-#define MAXLINE 4096
 #define QLEN    10
 
 #ifndef HOST_NAME_MAX
@@ -18,55 +22,32 @@
 
 #define oops(msg)   { perror(msg), exit(1); }
 
-void str_echo(int sockfd)
-{
-    ssize_t     n;
-    char        buf[BUFLEN];
-
-again:
-    while ( (n = read(sockfd, buf, BUFLEN)) > 0) {
-        printf("message get");
-        write(STDOUT_FILENO, buf, n);
-        write(sockfd, buf, n);
-    }
-    if (n < 0 && errno == EINTR)
-        goto again;
-    else if (n < 0)
-        oops("read");
-}
-
-
 int initserver(int type, const struct sockaddr *addr, 
             socklen_t alen, int qlen)
 {   
     int listenfd, err;
     int reuse = 1;
 
-    if ((listenfd = socket(addr->sa_family, type, 0)) < 0)
-        return(-1);
-    printf("socket succeed, listenfd is: %d\n", listenfd);
+    if ( (listenfd = socket(addr->sa_family, type, 0)) < 0)
+        oops("socket");
+    printf("\n socket succeed, listenfd is: %d\n", listenfd);
     if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &reuse,
             sizeof(int)) < 0)
         oops("setsockopt");
     if (bind(listenfd, addr, alen) < 0)
         oops("bind");
-    printf("bind succeed!");
+    printf("bind succeed!\n");
     if (type == SOCK_STREAM || type == SOCK_SEQPACKET)
-        if (listen(listenfd, qlen) < 0)
-            goto errout;
+        if (listen(listenfd, qlen) < 0){
+            close(listenfd);
+            oops("listen");
+        }
     return(listenfd);
-
-errout:
-    err = errno;
-    close(listenfd);
-    errno = err;
-    return(-1);
 }
 
 void serve(int listenfd)
 {
     printf("listenfd is %d\n", listenfd);
-    printf("come on wding\n");
 
     int             connfd;
     int             childpid;
@@ -143,30 +124,35 @@ void serve(int listenfd)
 
 int main(void)
 {
-    struct addrinfo *ailist, *aip;
+    struct addrinfo *ailist, *aip;      
     struct addrinfo hint;
-    int             listenfd, err, n;
+    int             listenfd, err;
+    int             hostlen;   
     char            *host;
-
-    if ((n = sysconf(_SC_HOST_NAME_MAX)) < 0)
-        n = HOST_NAME_MAX;
-    if ((host = malloc(n)) == NULL)
+    
+    /* set host point for hostname */
+    if ( (hostlen = sysconf(_SC_HOST_NAME_MAX)) < 0)
+        hostlen = HOST_NAME_MAX;
+    if ((host = malloc(hostlen)) == NULL)
         oops("malloc");
-    if (gethostname(host, n) < 0)
+    
+    /* get hostname */
+    if (gethostname(host, hostlen) < 0)
         oops("gethostname");
 
     memset(&hint, 0, sizeof(hint));
-    hint.ai_flags = AI_CANONNAME;
+    hint.ai_flags = AI_PASSIVE;     /* bind sockfd for listen */
     hint.ai_socktype = SOCK_STREAM;
     hint.ai_canonname = NULL;
     hint.ai_addr = NULL;
     hint.ai_next = NULL;
 
-    if ((err = getaddrinfo(host, "16000", &hint, &ailist)) != 0) {
+    if ((err = getaddrinfo(host, SERV_PORT_STR, &hint, &ailist)) != 0) {
         syslog(LOG_ERR, "serv: getaddrinfo error: %s", gai_strerror(err));
         exit(1);
     }
 
+    /* simply select first addr to listen ,need to improve here*/
     for (aip = ailist; aip != NULL; aip = aip->ai_next) {
         if ((listenfd = initserver(SOCK_STREAM, aip->ai_addr, 
                     aip->ai_addrlen, QLEN)) >= 0) {
