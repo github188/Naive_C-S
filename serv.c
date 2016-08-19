@@ -116,7 +116,8 @@ void serve(int listenfd)
             //close(connfd);
             memcpy(&rev_info, rev_buff, rlen);
 
-            printf("recv over sendID = %s",rev_info.send_ID);
+            printf("recv over sendID = %s, info_length = %d\n, info_content is: %s\n",
+                    rev_info.send_ID, rev_info.info_length, rev_info.info_content);
             free(rev_buff);
 
             //getnameinfo() inverse of getaddrinfo
