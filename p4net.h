@@ -19,9 +19,16 @@
 #define SERV_PORT       9527
 #define SERV_PORT_STR   "9527"
 
+typedef enum
+{
+    SER_ADV = 1,
+    CNT_GPS,
+    CNT_LOG
+}TYPE;
+
 #ifndef HAVE_NETMODULEINFO_STRUCT
 struct Net_Info {
-    unsigned char   iType;
+    TYPE            type;
     char            senderID[20];
     size_t          info_length;
     char            info_content[BUFFSIZE];

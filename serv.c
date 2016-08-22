@@ -79,7 +79,7 @@ void serve(int listenfd)
         if ( (childpid = fork()) == 0) { /* child process */
             close(listenfd);
             
-            struct CS_MsgInfo rev_info;
+            struct Net_Info rev_info;
             int rlen = sizeof(rev_info);
             memset(&rev_info, 0 ,rlen);
 
@@ -98,7 +98,7 @@ void serve(int listenfd)
             memcpy(&rev_info, rev_buff, rlen);
 
             printf("recv over sendID = %s, info_length = %d\n, info_content is: %s\n",
-                    rev_info.send_ID, rev_info.info_length, rev_info.info_content);
+                    rev_info.senderID, rev_info.info_length, rev_info.info_content);
             free(rev_buff);
 
             //getnameinfo() inverse of getaddrinfo

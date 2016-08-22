@@ -7,10 +7,10 @@
 #include <string.h>
 #include <syslog.h>
 #include <sys/types.h>
+#include "p4net.h"
 
 #define BUFLEN      128
 #define MAXSLEEP    128
-#define MAXLINE     4096
 
 #define oops(msg)   { perror(msg), exit(1); }
 
@@ -88,20 +88,21 @@ void serv_req(int sockfd)
         char    info_content[1024]; /* info content */
     };
 
-    struct CS_MsgInfo msginfo;
-    size_t slen = sizeof(msginfo);
-    memset(&msginfo, 0, slen);
+    // struct CS_MsgInfo msginfo;
+    struct Net_Info P4MsgInfo;
+    size_t slen = sizeof(P4MsgInfo);
+    memset(&P4MsgInfo, 0, slen);
     printf("Enter the content you wanna to send\n");
     //msginfo.send_ID = "192.168.37.130";   /* wrong method */
-    strcpy(msginfo.send_ID, "192.168.37.130");
+    strcpy(P4MsgInfo.senderID, "192.168.37.130");
 
-    if ( (msginfo.info_length = read(STDIN_FILENO, 
-                   msginfo.info_content, 1024) - 1) < 0)
+    if ( (P4MsgInfo.info_length = read(STDIN_FILENO, 
+                   P4MsgInfo.info_content, 1024) - 1) < 0)
        oops("read stdin");
     
     char *snd_buf = (char*)malloc(slen);
     memset(snd_buf, 0, slen);
-    memcpy(snd_buf, &msginfo, slen);
+    memcpy(snd_buf, &P4MsgInfo, slen);
     
     int pos = 0, len = 0;
     while (pos < slen)
