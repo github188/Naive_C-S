@@ -12,6 +12,7 @@
 #include <sys/time.h>       /* timeval{} for select */
 #include <time.h>           /* timespec{} for pselect */
 #include <arpa/inet.h>      /* inet(3) functions */
+#include <pthread.h>
 
 #define MAXLINE     1024
 #define BUFFSIZE    4096
