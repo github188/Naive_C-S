@@ -12,6 +12,7 @@
 #include <syslog.h>
 #include <string.h>
 #include <pthread.h>
+#include <mysql/mysql.h>
 #include "../lib/p4net.h"
 
 #define BUFLEN  128
@@ -24,33 +25,46 @@
 //static void *servit(void *);
 static void * servit(void *arg)
 {
+    int connfd;
+
+    connfd = *((int *) arg);
+    free(arg);
+
     pthread_detach(pthread_self());
     printf("someone knock it\n");
-    close((int) arg);
+    close(connfd);
     return(NULL);
 }
 
 void serve(int listenfd)
 {
-    int             connfd;
+    int             *connfd;
     socklen_t       alen, blen;
     struct  addrinfo cliaddr;
     char    buff[BUFLEN];
     char    clihost[BUFLEN];
     char    cliserv[BUFLEN];
     pthread_t       tid;
+    MYSQL           *conn;
+
+    /* 调用自定义包裹函数db_init进行数据库连接初始化 */
+    conn = db_init(NULL);
 
     for ( ; ; ) 
     {
         alen = sizeof(cliaddr);
-        printf("alen is: %d\n",alen);
-        //memset(&cliaddr, 0, len);
-        if ((connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &alen)) < 0) {
+        memset(&cliaddr, 0, alen);
+        
+        /* 为了将connfd值传递给子线程，将connfd设置为指针 */
+        if ((connfd = malloc(sizeof(int))) < 0)
+            handle_error("malloc");
+
+        if ((*connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &alen)) < 0) {
             syslog(LOG_ERR, "serv: accept error: %s", strerror(errno));
             exit(1);
         }
         printf("accept success\n");      
-        pthread_create(&tid, NULL, &servit, (void *) connfd);
+        pthread_create(&tid, NULL, &servit, connfd);
         //printf("connection from where?\n");
         
 //        if ( (childpid = fork()) == 0) { /* child process */
@@ -104,8 +118,11 @@ int main(void)
 {
     int             listenfd;
     int             hostlen;   
-    char            *host;
+    char           *host;
     socklen_t       addrlenp;
+//    MYSQL          *conn;
+//    MYSQL_RES      *res;
+//    MYSQL_ROW       row; 
     /*
      *  检测系统支持最大的主机名长度
      *  如果获取失败便设置为256 
@@ -121,8 +138,21 @@ int main(void)
     /* 调用serv_init函数获取listen socket */
     if ((listenfd = serv_init(host, SERV_PORT_STR, &addrlenp)) < 0)
        oops("serv_init");
-
+   
     serve(listenfd);
+    
+//    if (mysql_query(conn, "SELECT * FROM `adverinfo`")) {
+//        fprintf(stderr, "%s\n", mysql_error(conn));
+//        exit(1);
+//    }
+//    
+//    res = mysql_use_result(conn);
+//    while ((row = mysql_fetch_row(res)) != NULL)
+//        printf("%s\n", row[1]);
+//    mysql_free_result(res);
+//    mysql_close(conn);
+
+//    serve(listenfd);
 
     exit(0); 
 }

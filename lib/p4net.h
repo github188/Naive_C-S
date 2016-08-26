@@ -32,6 +32,8 @@
 #define handle_error(msg) \
             do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
+#define oops(msg) {perror(msg); exit(1); }
+
 /* serv_int fun defined in P4NetInit.c */
 int serv_init(const char *, const char *, socklen_t *);
 
