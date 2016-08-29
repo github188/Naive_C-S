@@ -30,8 +30,15 @@ static void * servit(void *arg)
     connfd = *((int *) arg);
     free(arg);
 
+    printf("servit pthread id is %d\n",pthread_self());
     pthread_detach(pthread_self());
     printf("someone knock it\n");
+    char str[20] = "welcome!\n";
+    do {
+            send(connfd, str, sizeof(str), 0);
+            sleep(5);
+    } while(1);
+
     close(connfd);
     return(NULL);
 }
@@ -44,11 +51,28 @@ void serve(int listenfd)
     char    buff[BUFLEN];
     char    clihost[BUFLEN];
     char    cliserv[BUFLEN];
-    pthread_t       tid;
     MYSQL           *conn;
+    pthread_t       tid;
+    MYSQL_RES       *res;
+    MYSQL_ROW       row;
 
     /* 调用自定义包裹函数db_init进行数据库连接初始化 */
-    conn = db_init(NULL);
+
+    if(db_init(&conn))
+        printf("init error\n");
+
+    printf("sql in serve:\n");
+
+    if (mysql_query(conn, "SELECT * FROM `adverinfo`")) {
+        fprintf(stderr, "%s\n", mysql_error(conn));
+        exit(1);
+    }
+    
+    res = mysql_use_result(conn);
+    while ((row = mysql_fetch_row(res)) != NULL)
+        printf("%s\n", row[1]);
+    mysql_free_result(res);
+    mysql_close(conn);
 
     for ( ; ; ) 
     {
@@ -120,9 +144,9 @@ int main(void)
     int             hostlen;   
     char           *host;
     socklen_t       addrlenp;
-//    MYSQL          *conn;
-//    MYSQL_RES      *res;
-//    MYSQL_ROW       row; 
+    MYSQL          *conn;
+    MYSQL_RES      *res;
+    MYSQL_ROW       row; 
     /*
      *  检测系统支持最大的主机名长度
      *  如果获取失败便设置为256 
@@ -140,19 +164,6 @@ int main(void)
        oops("serv_init");
    
     serve(listenfd);
-    
-//    if (mysql_query(conn, "SELECT * FROM `adverinfo`")) {
-//        fprintf(stderr, "%s\n", mysql_error(conn));
-//        exit(1);
-//    }
-//    
-//    res = mysql_use_result(conn);
-//    while ((row = mysql_fetch_row(res)) != NULL)
-//        printf("%s\n", row[1]);
-//    mysql_free_result(res);
-//    mysql_close(conn);
-
-//    serve(listenfd);
 
     exit(0); 
 }
