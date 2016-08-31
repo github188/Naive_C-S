@@ -13,6 +13,8 @@
 #include <string.h>
 #include <pthread.h>
 #include <mysql/mysql.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include "../lib/p4net.h"
 
 #define BUFLEN          128
@@ -150,41 +152,79 @@ static void * recfm(void *arg)
 
 void serve(int listenfd)
 {
-    int             *connfd;
+    int             i, connfd, sockfd;
+    int             maxi, maxfd, nready;
+    int             client[FD_SETSIZE];
+    ssize_t         n;
     pthread_t       tid;
     socklen_t       alen, blen;
     struct  addrinfo cliaddr;
-    char    buff[BUFLEN];
+    fd_set  rset, allset;
+    char    buf[MAXLINE];
     char    clihost[BUFLEN];
     char    cliserv[BUFLEN];
+    
+    maxfd = listenfd;
+    maxi  = -1;
 
-    /*  因为mysql_library_init函数并非线程安全，
-     *  所以需要在在主线程中执行。*/
-    mysql_library_init(0, NULL, NULL);
+    for (i = 0; i < FD_SETSIZE; i++)
+        client[i] = -1;
 
-    printf("sql in serve:\n");
+    FD_ZERO(&allset);
+    FD_SET(listenfd, &allset);
 
     for ( ; ; ) 
     {
-        alen = sizeof(cliaddr);
-        memset(&cliaddr, 0, alen);
-        
-        /* 为了将connfd值传递给子线程，将connfd设置为指针 */
-        if ((connfd = malloc(sizeof(int))) < 0)
-            handle_error("malloc");
+        rset = allset;
+        nready = select(maxfd+1, &rset, NULL, NULL, NULL);
 
-        if ((*connfd = accept(listenfd, (struct sockaddr *)&cliaddr, &alen)) < 0) {
-            syslog(LOG_ERR, "serv: accept error: %s", strerror(errno));
-            exit(1);
+        if (FD_ISSET(listenfd, &rset)) {    /* new connection */
+            alen = sizeof(cliaddr);
+            memset(&cliaddr, 0, alen);
+            if ((connfd = accept(listenfd, (SA *)&cliaddr, &alen)) < 0) {
+                syslog(LOG_ERR, "serv: accept error: %s", strerror(errno));
+                exit(1);
+            }
+
+            for (i = 0; i < FD_SETSIZE; i++)
+                if (client[i] < 0) {
+                    client[i] = connfd;     /* save descriptor */
+                    break;
+                }
+
+            if (i == FD_SETSIZE)
+                handle_error("too many clients");
+
+            FD_SET(connfd, &allset);        /* add new fd to set */
+            
+            if (connfd > maxfd)
+                maxfd = connfd;
+
+            if (i > maxi)
+                maxi = i;                   /* max index in client[] */
+            
+            if (--nready <= 0)              /* if there is only one fd return in select */
+                continue;
         }
-        printf("accept success\n");      
-        pthread_create(&tid, NULL, &sndto, connfd);
-        pthread_create(&tid, NULL, &recfm, connfd);
-    }
 
-    mysql_library_end();
-    exit(0);
-    //close(connfd);
+        for (i = 0; i <= maxi; i++) {       /* check all clients for data */
+            if ( (sockfd = client[i]) < 0)
+                continue;
+
+            if (FD_ISSET(sockfd, &rset)) {
+                if ((n = read(sockfd, buf, MAXLINE)) == 0) {
+                    /* Connection closed by client */
+                    close(sockfd);
+                    FD_CLR(sockfd, &allset);
+                    client[i] = -1;
+                } else
+                    write(STDOUT_FILENO, buf, n);
+
+                if (--nready <= 0)
+                    break;
+            }
+        }
+    }
 }
 
 
