@@ -1,7 +1,7 @@
 /*******************************************
- * Copyright (C), 2002-2016,SZ-STREAMING Tech. Co., Ltd.
+ * Copyright (C), 2002-2016,SZ-STREAMAX Tech. Co., Ltd.
  * Filename :
- *              P4NetModule.h
+ *              p4net.h
  * Author :     wding
  * Description: header for network module of P4 system
  */
@@ -14,8 +14,9 @@
 #include <arpa/inet.h>      /* inet(3) functions */
 #include <pthread.h>
 #include <netdb.h>
-#include <errno.h>
+#include <sys/un.h>
 #include <syslog.h>
+#include <errno.h>
 
 #define LISTENQ     1024
 #define MAXLINE     1024
@@ -33,6 +34,13 @@
             do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
 #define oops(msg) {perror(msg); exit(1); }
+
+#define handle_mysql_error(msg, mysql) \
+            do { printf(msg, mysql_error(mysql)); \
+                mysql_close(mysql); \
+                mysql_library_end(); \
+                exit(EXIT_FAILURE); \
+            } while(0)
 
 /* serv_int fun defined in P4NetInit.c */
 int serv_init(const char *, const char *, socklen_t *);

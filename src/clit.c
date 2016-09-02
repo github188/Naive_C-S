@@ -134,7 +134,7 @@ void serv_test(int sockfd)
 {   
     int     n;
     char    buf[MAXLINE];
-    char    str[MAXLINE] = "talk is cheap\n";
+    char    str[MAXLINE] = "talk is cheap";
 
     do {
         write(sockfd, str, strlen(str));
@@ -168,13 +168,14 @@ int main(int argc, char *argv[])
     for (aip = ailist; aip != NULL; aip = aip->ai_next) {
         if ((sockfd = connect_retry(aip->ai_family, SOCK_STREAM, 0,
             aip->ai_addr, aip->ai_addrlen)) < 0) {
-                err = errno;
+                continue;
         } else {
             serv_test(sockfd);
             exit(0);
         }
     }
-    oops("can't connect to the server");
-}
 
+    if (aip == NULL)
+        handle_error("Cannot connect to the server");
+}
 
