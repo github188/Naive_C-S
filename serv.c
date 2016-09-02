@@ -12,15 +12,22 @@
 #include <syslog.h>
 #include <string.h>
 #include <pthread.h>
-#include "p4net.h"
+#include "./lib/p4net.h"
 
 #define BUFLEN  128
+#define QLEN    8
 
 #ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX   256
 #endif
 
 #define oops(msg)   { perror(msg), exit(1); }
+
+#define handle_error(msg) \
+    do { perror(msg); exit(EXIT_FAILURE); } while (0)
+
+#define handle_error_en(en, msg) \
+    do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
 //static void *servit(void *);
 static void * servit(void *arg)

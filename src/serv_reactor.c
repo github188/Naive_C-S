@@ -105,6 +105,7 @@ static void *pthr_adver_boardcast(void *arg)
 
 int date_insert(const char *buf, MYSQL *db_insert)
 {
+    printf("data ready\n");
     char mysql_buf[BUFLEN];
     bzero(mysql_buf, BUFLEN);
 
@@ -114,6 +115,7 @@ int date_insert(const char *buf, MYSQL *db_insert)
             handle_mysql_error("query for adverinfo error: %s\n", db_insert);
 
     write(STDOUT_FILENO, mysql_buf, sizeof(mysql_buf));
+
     return 0;
 }
 
