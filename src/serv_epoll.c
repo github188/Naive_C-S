@@ -15,6 +15,7 @@
 #include <mysql/mysql.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <fcntl.h>
 #include <sys/epoll.h>
 #include "../lib/p4net.h"
 
@@ -33,9 +34,10 @@
 #define HOST_NAME_MAX   256
 #endif
 
-static int  client[FD_SETSIZE];
+static int  client[MAXEVENTS];
 static int  flag_advpthread = 1;
 static int  maxi = -1;
+static int  p_epollfd;
 
 /*
  * 子线程：用于定时给所有已连接设备发送广告信息
@@ -45,8 +47,9 @@ static int  maxi = -1;
 static void *pthr_adver_boardcast(void *arg)
 {
     pthread_detach(pthread_self());
-    int          connfd;
+    int          connfd, pfds;
     char sendbuf[BUFFSIZE];
+    struct epoll_event events[MAXEVENTS];
 
     MYSQL       *db_mysql;
     MYSQL_RES   *db_result;
@@ -86,12 +89,18 @@ static void *pthr_adver_boardcast(void *arg)
         {
             memset(sendbuf, 0, sizeof(sendbuf));
             sprintf(sendbuf, "Adver: %s\n", db_row[1]);
-            for (i = 0; i <= maxi; i++)
+            
+            if((pfds = epoll_wait(p_epollfd, events, MAXEVENTS, -1)) == -1)
+                handle_error("pthread epoll_wait");
+            printf("pfds is %d\n", pfds);
+            for (i = 0; i < pfds; i++)
             {
-                connfd = client[i];    
-                //send(connfd, sendbuf, sizeof(sendbuf), 0);
+                if(events[i].events & EPOLLOUT) {
+                    printf("send to connfd: %d\n", events[i].data.fd);
+                    send(events[i].data.fd, sendbuf, sizeof(sendbuf), 0);
+                }
             }
-            sleep(2);
+            sleep(20);
         }
         free(db_row);
 
@@ -134,8 +143,7 @@ static int set_non_blocking(int sockfd)
 
 void serve(int listenfd)
 {
-    int             i, connfd, sockfd, epollfd, j, nfds;
-    int             maxfd, nready;
+    int             i, connfd, sockfd, j, epollfd, nfds;
     ssize_t         n;
     pthread_t       tid;
     socklen_t       alen, blen;
@@ -146,13 +154,13 @@ void serve(int listenfd)
     char    cliserv[BUFLEN];
     const char *query_init = "SET NAMES UTF8";
 
-    struct epoll_event event;
-    struct epoll_event *events;
+    struct epoll_event event, events[MAXEVENTS];
 
     MYSQL   *db_insert;
-    
-    maxfd = listenfd;
-
+ 
+    for (i = 0; i < MAXEVENTS; i++)
+        client[i] = -1;
+       
     mysql_library_init(0, NULL, NULL);
 
     if ( NULL == (db_insert = mysql_init(NULL))) {
@@ -170,28 +178,24 @@ void serve(int listenfd)
     if ((epollfd = epoll_create1(0)) == -1)
         handle_error("epoll_create");
 
+    if ((p_epollfd = epoll_create1(0)) == -1)
+        handle_error("epoll_create");
+
+    printf("epollfd is %d, p_epollfd is %d\n", epollfd, p_epollfd);
+
     event.events = EPOLLIN;
     event.data.fd = listenfd;
 
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, listenfd, &event) == -1)
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, listenfd, &event) < 0)
         handle_error("epoll_ctl");
 
     for ( ; ; ) 
     {
-        if ((nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1)) == -1)
+        if ((nfds = epoll_wait(epollfd, events, MAXEVENTS, -1)) == -1)
             handle_error("epoll_wait");
 
         for (j = 0; j < nfds; j++) {
-            if ((events[j].events & EPOLLERR) ||
-                    (events[j].events & EPOLLHUP) ||
-                    (!(events[j].events & EPOLLIN)))
-            {
-                fprintf(stderr, "epoll error\n");
-                close(events[j].data.fd);
-                continue;
-            }
-            
-            else if (listenfd == events[j].data.fd)
+            if (listenfd == events[j].data.fd)
             { /* new connection */
                 alen = sizeof(cliaddr);
                 memset(&cliaddr, 0, alen);
@@ -201,19 +205,23 @@ void serve(int listenfd)
                 }
                 
                 if (getnameinfo((SA *)&cliaddr, alen, clihost, BUFLEN,
-                            cliserv, BUFLEN, NI_NUMERICHOST|NI_NUMERICSERV) != 0)
+                            cliserv, BUFLEN, NI_NUMERICHOST|NI_NUMERICSERV) == 0)
                     printf("Accepted connection on descriptor %d, host: %s, port: %s\n",
                             connfd, clihost, cliserv);
 
-                if (set_non_blocking(connfd) != 0)
-                    handle_error("setnonblocking");
+//                if (set_non_blocking(connfd) != 0)
+//                    handle_error("setnonblocking");
 
                 event.data.fd = connfd;
-                event.events = EPOLLIN | EPOLLET;
+                event.events = EPOLLIN;
                 if (epoll_ctl(epollfd, EPOLL_CTL_ADD, connfd, &event) < 0)
-                    handle_error("epoll_ctl);
+                    handle_error("epoll_ctl");
+                
+                event.events = EPOLLOUT;
+                if (epoll_ctl(p_epollfd, EPOLL_CTL_ADD, connfd, &event) < 0)
+                    handle_error("p_epoll_ctl");
 
-                for (i = 0; i < MAX_EVENTS; i++)
+                for (i = 0; i < MAXEVENTS; i++)
                     if (client[i] < 0) {
                         client[i] = connfd;     /* save fd in client[] */
                         break;
@@ -227,12 +235,19 @@ void serve(int listenfd)
 
                 continue;
             }
-            else {
+            else if(events[j].events & EPOLLIN) {
                 /* data on sockfd waiting to be read */
-                printf("Sockfd: %d waiting to be read\n", events[n].data.fd);
+                if ((n = read(events[j].data.fd, buf, MAXLINE)) == 0) 
+                    close(events[j].data.fd);
+                else
+                    write(STDOUT_FILENO, buf ,n);
             }
-
+//            else if(events[j].events & EPOLLOUT)
+//                printf("write ready\n");
+//            else 
+//                printf("error?\n");
         }
+    }
 
 //        for (i = 0; i <= maxi; i++) {       /* check all clients for data */
 //            if ( (sockfd = client[i]) < 0)
@@ -253,7 +268,6 @@ void serve(int listenfd)
 //            }
 //        }
 //    }
-
     mysql_close(db_insert);
     mysql_library_end();
 }

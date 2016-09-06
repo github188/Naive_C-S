@@ -87,7 +87,7 @@ static void *pthr_adver_boardcast(void *arg)
             for (i = 0; i <= maxi; i++)
             {
                 connfd = client[i];    
-                //send(connfd, sendbuf, sizeof(sendbuf), 0);
+                send(connfd, sendbuf, sizeof(sendbuf), 0);
             }
             sleep(2);
         }
