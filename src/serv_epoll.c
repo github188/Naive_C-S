@@ -51,11 +51,17 @@ static void *pthr_adver_boardcast(void *arg)
     char sendbuf[BUFFSIZE];
     struct epoll_event events[MAXEVENTS];
 
+    /* 设置通信协议的结构体 
+     * 该结构体用于向客户端发送广告信息 */
+    struct Net_Info adver_snd2cnt;
+    adver_snd2cnt.type = 1;     
+    strcpy(adver_snd2cnt.senderID, "server");
+    adver_snd2cnt.info_length = sizeof(adver_snd2cnt.content);
+
+    /* 数据库参数、查询语句定义 */
     MYSQL       *db_mysql;
     MYSQL_RES   *db_result;
     MYSQL_ROW    db_row;
-    MYSQL_FIELD *db_field;
-
     unsigned int timeout = 3000;    /* mysqlopt timeout val */
     unsigned int num_fields;        /* fields numbers of query result */
     unsigned int i;                 /* int for loop */
@@ -69,8 +75,6 @@ static void *pthr_adver_boardcast(void *arg)
         return(NULL);
     }
     
-//    mysql_options(db_mysql, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
-
     if (!mysql_real_connect(db_mysql, DBHOST, DBUSER, DBPWD, 
                         DBNAME, 0, NULL, 0))
         handle_mysql_error("connect failed: %s\n", db_mysql);
@@ -84,23 +88,27 @@ static void *pthr_adver_boardcast(void *arg)
     
         if ( NULL == (db_result = mysql_store_result(db_mysql)))
             handle_mysql_error("fetch result failed: %s\n", db_mysql);
-
+        
+        /* 定时读取db_result中下一条数据，发送至客户端 */
         while (NULL != (db_row = mysql_fetch_row(db_result)))
         {
             memset(sendbuf, 0, sizeof(sendbuf));
-            sprintf(sendbuf, "Adver: %s\n", db_row[1]);
-            
+            memset(adver_snd2cnt.content.adverinfo, 0, sizeof(adver_snd2cnt.content.adverinfo));
+            strcpy(adver_snd2cnt.content.adverinfo, db_row[1]);
+            /* 将结构体转换为二进制流发送至客户端 */
+            memcpy(sendbuf, &adver_snd2cnt, sizeof(adver_snd2cnt));
+            /* 获取已经准备发送的端口完成发送 */
             if((pfds = epoll_wait(p_epollfd, events, MAXEVENTS, -1)) == -1)
                 handle_error("pthread epoll_wait");
-            printf("pfds is %d\n", pfds);
             for (i = 0; i < pfds; i++)
             {
                 if(events[i].events & EPOLLOUT) {
-                    printf("send to connfd: %d\n", events[i].data.fd);
-                    send(events[i].data.fd, sendbuf, sizeof(sendbuf), 0);
+                    //printf("send to connfd: %d\n", events[i].data.fd);
+                    int ns = send(events[i].data.fd, sendbuf, sizeof(adver_snd2cnt), 0);
+                    //printf("have send %d bytes\n", ns);
                 }
             }
-            sleep(20);
+            sleep(5);
         }
         free(db_row);
 

@@ -17,13 +17,24 @@
 #include <sys/un.h>
 #include <syslog.h>
 #include <errno.h>
+#include <sys/un.h>         /* Unix domain socket */
 
-#define LISTENQ     1024
-#define MAXLINE     1024
-#define BUFFSIZE    4096
+#ifndef AF_LOCAL
+#define AF_LOCAL    AF_UNIX
+#endif
+
+#ifndef PF_LOCAL
+#define PF_LOCAL    PF_UNIX
+#endif
+
+#define LISTENQ     1024        /* listen queue */
+#define MAXLINE     4096
+#define BUFFSIZE    8192
 
 #define SERV_PORT       9527
-#define SERV_PORT_STR   "9527"
+#define SERV_PORT_STR   "9527"      /* port used in BSM&NM */
+
+#define UNIX_PATH_NM    "/tmp/unix_path.dg"     /* Unix domain datagram path */
 
 #define SA  struct sockaddr
 
@@ -51,14 +62,27 @@ typedef enum
     SER_ADV = 1,    /* advertise infomation */
     CNT_GPS,        /* GPS info */
     CNT_LOG         /* syslog info */
-}TYPE;
+}type_t;
+
+typedef struct gps_info {
+    char            info_type[6];
+    char            local_time[50];
+    char            Latitude[20];
+    char            Longitude[20];
+}gps_info_t;
+
+typedef union info_content {
+    gps_info_t      gps;
+    char            adverinfo[256];
+    char            loginfo[128];
+}info_content_t;
 
 #ifndef HAVE_NETMODULEINFO_STRUCT
 struct Net_Info {
-    TYPE            type;
-    char            senderID[20];
-    size_t          info_length;
-    char            info_content[BUFFSIZE];
+    type_t              type;
+    char                senderID[20];
+    size_t              info_length;
+    info_content_t      content;
 };
 #endif
 
