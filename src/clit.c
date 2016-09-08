@@ -42,6 +42,28 @@ int connect_retry(int domain, int type, int protocol,
     return(-1);
 }
 
+void serv_test(int sockfd)
+{   
+    int     n;
+    char    buf[MAXLINE];
+    char    str[MAXLINE] = "talk is cheap";
+    struct Net_Info sndinfo;
+    sndinfo.type = 3;
+    strcpy(sndinfo.senderID, "Device No.1");
+    strcpy(sndinfo.content.loginfo.module_name, "DMM");
+    strcpy(sndinfo.content.loginfo.log_content, "Core Dump!");
+    sndinfo.content.loginfo.occur_time = time(NULL);
+    memcpy(buf, &sndinfo, sizeof(sndinfo));
+
+    do {
+        send(sockfd, buf, sizeof(sndinfo), 0);
+        sleep(3);
+    } while(1);
+
+    close(sockfd);
+}
+
+
 static void *pthread_unixdg(void *arg)
 {
 /* TODO: recv udp resend to bsm */
@@ -52,9 +74,11 @@ static void *pthread_unixdg(void *arg)
     int     udp_sockfd = targ->udp_sockfd;
     printf("Thread %d: tcpsock is %d, udpsock is %d\n",
             targ->thread_id, targ->tcp_sockfd, targ->udp_sockfd);
-    pthread_detach(targ->thread_id);
+//    pthread_detach(targ->thread_id);
+    serv_test(tcp_sockfd);
     for ( ; ; ) {
-    if ((n = recvfrom(udp_sockfd, revbuf, BUFFSIZE, 0, NULL, NULL)) < 0)
+        printf("recv waiting\n");
+    if ((n = recvfrom(udp_sockfd, revbuf, BUFFSIZE, 0, NULL, NULL)) <= 0)
         handle_error("recv error");
     printf("recv Info from somewhere: %s\n", revbuf);
     }
@@ -76,28 +100,18 @@ void serv_req(int tcp_sockfd, int udp_sockfd)
     size_t slen = sizeof(P4MsgInfo);
     for ( ; ; ) {
         memset(&P4MsgInfo, 0, slen);    
-        if ( (len = recv(tcp_sockfd, revbuf, BUFLEN, 0)) <= 0)
+        if ( (len = recv(tcp_sockfd, revbuf, BUFLEN, 0)) < 0)
             oops("Recv from BSM");
+        if (len == 0) {
+            printf("Connection has been shutdown\n");
+            break;
+        }
         printf("recv len is: %d", len);
         memcpy(&P4MsgInfo, revbuf, slen);
         printf("rev from serv which type is %d, senderID is %s\n, adverinfo is %s\n",
                 P4MsgInfo.type, P4MsgInfo.senderID, P4MsgInfo.content.adverinfo);
     }
     close(tcp_sockfd);
-}
-
-void serv_test(int sockfd)
-{   
-    int     n;
-    char    buf[MAXLINE];
-    char    str[MAXLINE] = "talk is cheap";
-
-    do {
-        write(sockfd, str, strlen(str));
-        sleep(5);
-    } while(1);
-
-    close(sockfd);
 }
 
 int main(int argc, const char **argv)
