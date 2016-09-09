@@ -8,100 +8,60 @@
 #include <syslog.h>
 #include <sys/types.h>
 
-#define BUFLEN      128
-#define MAXSLEEP    128
+#define BUFLEN      1024
+#define MAXSLEEP    64      /* 最大重连间隔时间 */
 
-#define oops(msg)   { perror(msg), exit(1); }
+/* 错误处理函数 */
+#define handle_error_en(en, msg) \
+            do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
-/* try to connect with exponenital backoff */
+#define handle_error(msg) \
+            do { perror(msg); exit(EXIT_FAILURE); } while (0)
+
+/* 带有重连的connect，间隔时间使用指数补偿 */
 int connect_retry(int domain, int type, int protocol,
                 const struct sockaddr *addr, socklen_t alen)
 {
-    int numsec, fd;
+    int numsec, sockfd;
     
     for (numsec = 1; numsec <= MAXSLEEP; numsec <<= 1) {
-        if ((fd = socket(domain, type, protocol)) < 0)
-            oops("socket");
+        if ((sockfd = socket(domain, type, protocol)) < 0)
+            handle_error("Socket");
         
-        if (connect(fd, addr, alen) == 0) {
-            /* connection accepted */
-            return(fd);
+        if (connect(sockfd, addr, alen) == 0) {
+            /* 连接建立成功 */
+            return(sockfd);
         }
-        close(fd);
 
-        /* delay before re-connect */
+        /* 连接失败后延迟一段时间后重连 */
+        close(sockfd);
         if (numsec <= MAXSLEEP/2)
             sleep(numsec);
     }
     return(-1);
 }
 
-void serv_req(int sockfd)
+void serv_request(int sockfd)
 {
-//    int     n;
-//    char    buf[BUFLEN];
-    int n;
-    char sndbuf[BUFLEN];
-    char recbuf[BUFLEN];
-    // struct CS_MsgInfo msginfo;
-    //struct Net_Info P4MsgInfo;
-    //size_t slen = sizeof(P4MsgInfo);
-    //memset(&P4MsgInfo, 0, slen);
+    int     snd, rec;
+    char    sndbuf[BUFLEN];
+    char    recbuf[BUFLEN];
+    bzero(&sndbuf, BUFLEN);
+    bzero(&recbuf, BUFLEN);
+    /* 将输入的内容发送至服务器 */
     printf("Enter the content you wanna to send\n");
-    //msginfo.send_ID = "192.168.37.130";   /* wrong method */
-    //strcpy(P4MsgInfo.senderID, "192.168.37.130");
-    memset(sndbuf, 0, BUFLEN);
-    memset(recbuf, 0, BUFLEN);
-
-    if ( (n = read(STDIN_FILENO, sndbuf, BUFLEN)) < 0)
-        oops("read stdin");
- 
-    write(sockfd, sndbuf, BUFLEN);
+    if ( (snd = read(STDIN_FILENO, sndbuf, BUFLEN)) < 0)
+        handle_error("Read stdin");
+    send(sockfd, sndbuf, snd, 0);
+    /* 获取服务器返回的信息 */
     printf("message from server:\n");
-    
-    while ((n = read(sockfd, recbuf, BUFLEN)) > 0)
-        write(STDOUT_FILENO, recbuf, n);
-    if (n < 0)
-        oops("outputs");
+    while ((rec = recv(sockfd, recbuf, BUFLEN, 0)) > 0)
+        write(STDOUT_FILENO, recbuf, rec);
+    if (rec < 0)
+        handle_error("Recv");
 
-
-    //printf(sndbuf, BUFLEN);
-
-//    if ( (P4MsgInfo.info_length = read(STDIN_FILENO, 
-//                   P4MsgInfo.info_content, 1024) - 1) < 0)
-//       oops("read stdin");
-//    
-//   char *snd_buf = (char*)malloc(slen);
-//    memset(snd_buf, 0, slen);
-//    memcpy(snd_buf, &P4MsgInfo, slen);
-//    
-//    int pos = 0, len = 0;
-//    while (pos < slen)
-//    {
-//        if ( (len = send(sockfd, snd_buf, slen, 0)) <= 0)
-//            oops("struct send");
-//        pos += len;
-//    }
-//    free(snd_buf);
-//    close(sockfd);
-//    printf("Send over");
-    
     exit(0);
 }
-
-    //send(sockfd, snf_buf, slen, 0);
-    
-    //str_cli(stdin, sockfd);
-//    while ((n = recv(sockfd, buf, BUFLEN, 0)) > 0)
-//        write(STDOUT_FILENO, buf, n);
-//    if (n < 0) {
-//        printf("recv error");
-//        exit(-1);
-//    }
-    //printf("recv succeed");
-    //str_cli(stdin, sockfd);
-
-
 
 int main(int argc, char *argv[])
 {
@@ -113,25 +73,25 @@ int main(int argc, char *argv[])
         printf("usage: ServerInfo Needed");
         exit(-1);
     }
-    memset(&hint, 0, sizeof(hint));
+    bzero(&hint, sizeof(hint));
     hint.ai_socktype = SOCK_STREAM;
     hint.ai_canonname = NULL;
     hint.ai_addr = NULL;
     hint.ai_next = NULL;
 
     if ((err = getaddrinfo(argv[1], argv[2], &hint, &ailist)) != 0)
-        syslog(LOG_ERR, "client: getaddrinfo error: %s\n", 
+        syslog(LOG_ERR, "Client: getaddrinfo error: %s\n", 
                 gai_strerror(err));
     
     for (aip = ailist; aip != NULL; aip = aip->ai_next) {
         if ((sockfd = connect_retry(aip->ai_family, SOCK_STREAM, 0,
             aip->ai_addr, aip->ai_addrlen)) < 0) {
-                err = errno;
+                continue;
         } else {
-            serv_req(sockfd);
+            serv_request(sockfd);
             exit(0);
         }
     }
-    oops("can't connect to the server");
+    handle_error("Can't connect to the server");
 }
 
